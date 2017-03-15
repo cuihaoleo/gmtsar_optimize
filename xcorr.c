@@ -41,10 +41,8 @@ struct st_corr_thread_data {
 };
 
 void print_complex_float_array(const char *fmt, complex float *arr, int n, int m) {
-    int i, j;
-
-    for (i=0; i<n; i++) {
-        for (j=0; j<m; j++) {
+    for (int i=0; i<n; i++) {
+        for (int j=0; j<m; j++) {
             printf(fmt, crealf(arr[i*m+j]), cimagf(arr[i*m+j]));
         }
         putchar('\n');
@@ -52,7 +50,6 @@ void print_complex_float_array(const char *fmt, complex float *arr, int n, int m
 }
 
 complex float *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
-    int i, j;
     long offset;
     short *tmp;
     complex float *arr;
@@ -63,13 +60,13 @@ complex float *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
     tmp = malloc(nx * sizeof(short) * 2);
     arr = fftwf_malloc(n_rows * nx * sizeof(complex float));
 
-    for (i=0; i<n_rows; i++) {
+    for (int i=0; i<n_rows; i++) {
         if (fread(tmp, 2*sizeof(short), nx, fin) != (unsigned long)nx) {
             perror("Failed to read data from SLC file!");
             exit(-1);
         }
 
-        for (j=0; j<nx; j++)
+        for (int j=0; j<nx; j++)
             arr[i*nx + j] = tmp[2*j] + tmp[2*j+1] * I;
     }
 
@@ -84,11 +81,8 @@ complex float *c32_array_slice(
     complex float *arr;
     arr = fftwf_malloc(s_x * s_y * sizeof(complex float));
 
-    for (int i=0; i<s_y; i++) {
+    for (int i=0; i<s_y; i++)
         memcpy(&arr[i*s_x], &mat[(i+tl_y)*n_cols + tl_x], s_x * sizeof(complex float));
-        //for (int j=0; j<s_x; j++)
-        //    arr[i*s_x + j] = mat[(i+tl_y)*n_cols + j + tl_x];
-    }
 
     return arr;
 }
@@ -134,19 +128,16 @@ complex float *dft_interpolate(
 }
 
 long double time_corr(
-        const struct st_xcorr *xc,
         complex float *c1,
         complex float *c2,
+        int xsearch, int ysearch,
         int xoff, int yoff) {
 
-    int xsearch, ysearch;
     int nx_corr, ny_corr;
     int nx_win, ny_win;
 
-    xsearch = xc->xsearch;
     nx_corr = xsearch * 2;
     nx_win = nx_corr * 2;
-    ysearch = xc->ysearch;
     ny_corr = ysearch * 2;
     ny_win = ny_corr * 2;
 
@@ -155,8 +146,8 @@ long double time_corr(
     num = denom1 = denom2 = 0.0;
     for (int i=0; i<ny_corr; i++)
         for (int j=0; j<nx_corr; j++) {
-            long double a = c1[(xc->ysearch + i + yoff) * nx_win + (xc->xsearch + j + xoff)];
-            long double b = c2[(xc->ysearch + i) * nx_win + (xc->xsearch + j)];
+            long double a = c1[(ysearch + i + yoff) * nx_win + (xsearch + j + xoff)];
+            long double b = c2[(ysearch + i) * nx_win + (xsearch + j)];
 
             num += a * b;
             denom1 += a * a;
@@ -322,7 +313,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
     cave /= nx_corr * ny_corr;
     cmax /= cave;
 
-    cmax = time_corr(data->xc, c1, c2, xpeak, ypeak);
+    cmax = time_corr(c1, c2, xsearch, ysearch, xpeak, ypeak);
 
     //fprintf(stderr, "xypeak: (%d, %d)\n", xpeak, ypeak);
     //fprintf(stderr, "max_corr: %g\n", cmax);
@@ -411,11 +402,13 @@ void do_correlation(struct st_xcorr *xc, long thread_n) {
             c2 = c32_array_slice(s_rows, xc->s_nx, 0, ny_win, slave_loc_x-nx_win/2, nx_win);
  
             struct st_corr_thread_data *p = &thread_data[loc_n++];
-            p->xc = xc;
-            p->c1 = c1;
-            p->c2 = c2;
-            p->loc_x = loc_x;
-            p->loc_y = loc_y;
+            *p = (struct st_corr_thread_data) {
+                .xc = xc,
+                .c1 = c1,
+                .c2 = c2,
+                .loc_x = loc_x,
+                .loc_y = loc_y
+            };
 
             //corr_thread(p, NULL);
             g_thread_pool_push(thread_pool, p, NULL);
