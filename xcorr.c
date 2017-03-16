@@ -44,7 +44,7 @@ struct st_corr_thread_data {
 void print_complex_double_array(const char *fmt, complex double *arr, int n, int m) {
     for (int i=0; i<n; i++) {
         for (int j=0; j<m; j++) {
-            printf(fmt, crealf(arr[i*m+j]), cimagf(arr[i*m+j]));
+            printf(fmt, creal(arr[i*m+j]), cimag(arr[i*m+j]));
         }
         putchar('\n');
     }
@@ -268,7 +268,7 @@ complex double *freq_corr(
     int isign = 1;
     for (int i=0; i<ny_win; i++) {
         for (int j=0; j<nx_win; j++) {
-            c1_fft[i*nx_win + j] *= isign * conjf(c2_fft[i*nx_win + j]);
+            c1_fft[i*nx_win + j] *= isign * conj(c2_fft[i*nx_win + j]);
             isign = -isign;
         }
 
@@ -332,11 +332,11 @@ void corr_thread(gpointer arg, gpointer user_data) {
 
     mean1 = mean2 = 0.0;
     for (int i=0; i<nx_win*ny_win; i++) {
-        c1[i] = cabsf(c1[i]);
-        c2[i] = cabsf(c2[i]);
+        c1[i] = cabs(c1[i]);
+        c2[i] = cabs(c2[i]);
 
-        mean1 += crealf(c1[i]);
-        mean2 += crealf(c2[i]);
+        mean1 += creal(c1[i]);
+        mean2 += creal(c2[i]);
     }
 
     mean1 /= nx_win * ny_win;
@@ -431,7 +431,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
                 xpeak + xsearch - nx_corr2/2, nx_corr2);
 
         for (int i=0; i<nx_corr2*ny_corr2; i++)
-            corr2[i] = powf(corr2[i], 0.25);
+            corr2[i] = pow(corr2[i], 0.25);
 
         hi_corr = dft_interpolate_2d(corr2, ny_corr2, nx_corr2, factor, factor, lock);
 
