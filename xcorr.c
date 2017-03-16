@@ -34,14 +34,14 @@ struct st_xcorr {
 
 struct st_corr_thread_data {
     const struct st_xcorr *xc;
-    complex float *c1;
-    complex float *c2;
-    float xoff, yoff;
+    complex double *c1;
+    complex double *c2;
+    double xoff, yoff;
     int loc_x, loc_y;
-    float corr;
+    double corr;
 };
 
-void print_complex_float_array(const char *fmt, complex float *arr, int n, int m) {
+void print_complex_double_array(const char *fmt, complex double *arr, int n, int m) {
     for (int i=0; i<n; i++) {
         for (int j=0; j<m; j++) {
             printf(fmt, crealf(arr[i*m+j]), cimagf(arr[i*m+j]));
@@ -50,16 +50,16 @@ void print_complex_float_array(const char *fmt, complex float *arr, int n, int m
     }
 }
 
-complex float *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
+complex double *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
     long offset;
     short *tmp;
-    complex float *arr;
+    complex double *arr;
 
     offset = nx * start * sizeof(short) * 2;
     fseek(fin, offset, SEEK_SET);
 
     tmp = malloc(nx * sizeof(short) * 2);
-    arr = fftwf_malloc(n_rows * nx * sizeof(complex float));
+    arr = fftw_malloc(n_rows * nx * sizeof(complex double));
 
     for (int i=0; i<n_rows; i++) {
         if (fread(tmp, 2*sizeof(short), nx, fin) != (unsigned long)nx) {
@@ -75,54 +75,54 @@ complex float *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
     return arr;
 }
 
-complex float *c32_array_slice(
-        const complex float *mat, int n_cols,
+complex double *c32_array_slice(
+        const complex double *mat, int n_cols,
         int tl_y, int s_y,
         int tl_x, int s_x) {
 
     assert(tl_y >= 0 && tl_x >= 0 && tl_x < n_cols);
 
-    complex float *arr;
-    arr = fftwf_malloc(s_x * s_y * sizeof(complex float));
+    complex double *arr;
+    arr = fftw_malloc(s_x * s_y * sizeof(complex double));
 
     for (int i=0; i<s_y; i++)
-        memcpy(&arr[i*s_x], &mat[(i+tl_y)*n_cols + tl_x], s_x * sizeof(complex float));
+        memcpy(&arr[i*s_x], &mat[(i+tl_y)*n_cols + tl_x], s_x * sizeof(complex double));
 
     return arr;
 }
 
-complex float *dft_interpolate(
-        complex float *in,
+complex double *dft_interpolate(
+        complex double *in,
         int length,
         int scale,
         pthread_mutex_t *fftw_lock) {
 
-    fftwf_plan plan1, plan2;
-    complex float *in_fft;
-    complex float *out;
+    fftw_plan plan1, plan2;
+    complex double *in_fft;
+    complex double *out;
 
     assert(length >= 2 && TEST_2PWR(length));
     assert(scale >= 2 && TEST_2PWR(scale));
     
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    in_fft = fftwf_malloc(length * sizeof(complex float) * scale);
-    out = fftwf_malloc(length * sizeof(complex float) * scale);
-    plan1 = fftwf_plan_dft_1d(length, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan2 = fftwf_plan_dft_1d(length * scale, in_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
+    in_fft = fftw_malloc(length * sizeof(complex double) * scale);
+    out = fftw_malloc(length * sizeof(complex double) * scale);
+    plan1 = fftw_plan_dft_1d(length, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+    plan2 = fftw_plan_dft_1d(length * scale, in_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
-    fftwf_execute(plan1);
+    fftw_execute(plan1);
 
     int tail_offset = (scale - 1) * length;
-    memcpy(&in_fft[length/2 + tail_offset], &in_fft[length/2], length/2 * sizeof(complex float));
-    memset(&in_fft[length/2], 0, tail_offset * sizeof(complex float));
+    memcpy(&in_fft[length/2 + tail_offset], &in_fft[length/2], length/2 * sizeof(complex double));
+    memset(&in_fft[length/2], 0, tail_offset * sizeof(complex double));
 
-    fftwf_execute(plan2);
+    fftw_execute(plan2);
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    fftwf_free(in_fft);
-    fftwf_destroy_plan(plan1);
-    fftwf_destroy_plan(plan2);
+    fftw_free(in_fft);
+    fftw_destroy_plan(plan1);
+    fftw_destroy_plan(plan2);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
     for (int i=0; i<scale*length; i++)
@@ -131,17 +131,17 @@ complex float *dft_interpolate(
     return out;
 }
 
-complex float *dft_interpolate_2d(
-        complex float *in,
+complex double *dft_interpolate_2d(
+        complex double *in,
         int height, int width,
         int scale_h, int scale_w,
         pthread_mutex_t *fftw_lock) {
 
-    fftwf_plan plan1, plan2;
+    fftw_plan plan1, plan2;
     int out_height, out_width;
-    complex float *in_fft;
-    complex float *out_fft;
-    complex float *out;
+    complex double *in_fft;
+    complex double *out_fft;
+    complex double *out;
 
     assert(height >= 2 && TEST_2PWR(height));
     assert(scale_h >= 2 && TEST_2PWR(scale_h));
@@ -152,18 +152,18 @@ complex float *dft_interpolate_2d(
     out_width = width * scale_w;
     
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    in_fft = fftwf_malloc(height * width * sizeof(complex float));
-    out_fft = fftwf_malloc(out_height * out_width * sizeof(complex float));
-    out = fftwf_malloc(out_height * out_width * sizeof(complex float));
-    plan1 = fftwf_plan_dft_2d(height, width, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan2 = fftwf_plan_dft_2d(out_height, out_width, out_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
+    in_fft = fftw_malloc(height * width * sizeof(complex double));
+    out_fft = fftw_malloc(out_height * out_width * sizeof(complex double));
+    out = fftw_malloc(out_height * out_width * sizeof(complex double));
+    plan1 = fftw_plan_dft_2d(height, width, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+    plan2 = fftw_plan_dft_2d(out_height, out_width, out_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
-    fftwf_execute(plan1);
+    fftw_execute(plan1);
 
     int y_offset = out_height - height;
     int x_offset = out_width - width;
-    memset(out_fft, 0, out_height * out_width * sizeof(complex float));
+    memset(out_fft, 0, out_height * out_width * sizeof(complex double));
 
     for (int y=0; y<out_width; y++)
         for (int x=0; x<out_height; x++) {
@@ -189,13 +189,13 @@ complex float *dft_interpolate_2d(
             out_fft[y*out_height + x] = in_fft[sy*height + sx];
         }
 
-    fftwf_execute(plan2);
+    fftw_execute(plan2);
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    fftwf_free(in_fft);
-    fftwf_free(out_fft);
-    fftwf_destroy_plan(plan1);
-    fftwf_destroy_plan(plan2);
+    fftw_free(in_fft);
+    fftw_free(out_fft);
+    fftw_destroy_plan(plan1);
+    fftw_destroy_plan(plan2);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
     // FIXME: remove this later
@@ -207,8 +207,8 @@ complex float *dft_interpolate_2d(
 }
 
 long double time_corr(
-        complex float *c1,
-        complex float *c2,
+        complex double *c1,
+        complex double *c2,
         int xsearch, int ysearch,
         int xoff, int yoff) {
 
@@ -244,26 +244,26 @@ long double time_corr(
     return result;
 }
 
-complex float *freq_corr(
-        complex float *c1,
-        complex float *c2,
+complex double *freq_corr(
+        complex double *c1,
+        complex double *c2,
         int nx_win, int ny_win,
         pthread_mutex_t *fftw_lock) {
-    complex float *c1_fft, *c2_fft, *c3;
-    fftwf_plan plan1, plan2, plan3;
+    complex double *c1_fft, *c2_fft, *c3;
+    fftw_plan plan1, plan2, plan3;
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    c1_fft = fftwf_malloc(nx_win * ny_win * sizeof(complex float));
-    c2_fft = fftwf_malloc(nx_win * ny_win * sizeof(complex float));
-    c3 = fftwf_malloc(nx_win * ny_win * sizeof(complex float));
+    c1_fft = fftw_malloc(nx_win * ny_win * sizeof(complex double));
+    c2_fft = fftw_malloc(nx_win * ny_win * sizeof(complex double));
+    c3 = fftw_malloc(nx_win * ny_win * sizeof(complex double));
 
-    plan1 = fftwf_plan_dft_2d(ny_win, nx_win, c1, c1_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan2 = fftwf_plan_dft_2d(ny_win, nx_win, c2, c2_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan3 = fftwf_plan_dft_2d(ny_win, nx_win, c1_fft, c3, FFTW_BACKWARD, FFTW_ESTIMATE);
+    plan1 = fftw_plan_dft_2d(ny_win, nx_win, c1, c1_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+    plan2 = fftw_plan_dft_2d(ny_win, nx_win, c2, c2_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+    plan3 = fftw_plan_dft_2d(ny_win, nx_win, c1_fft, c3, FFTW_BACKWARD, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
-    fftwf_execute(plan1);
-    fftwf_execute(plan2);
+    fftw_execute(plan1);
+    fftw_execute(plan2);
 
     int isign = 1;
     for (int i=0; i<ny_win; i++) {
@@ -275,14 +275,14 @@ complex float *freq_corr(
         isign = -isign;
     }
 
-    fftwf_execute(plan3);
+    fftw_execute(plan3);
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    fftwf_free(c1_fft);
-    fftwf_free(c2_fft);
-    fftwf_destroy_plan(plan1);
-    fftwf_destroy_plan(plan2);
-    fftwf_destroy_plan(plan3);
+    fftw_free(c1_fft);
+    fftw_free(c2_fft);
+    fftw_destroy_plan(plan1);
+    fftw_destroy_plan(plan2);
+    fftw_destroy_plan(plan3);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
     // FIXME: remove this later
@@ -297,11 +297,11 @@ void corr_thread(gpointer arg, gpointer user_data) {
     struct st_corr_thread_data *data = arg;
     pthread_mutex_t *lock = user_data;
 
-    float mean1, mean2;
+    double mean1, mean2;
     int xsearch, ysearch;
     int nx_corr, ny_corr;
     int nx_win, ny_win;
-    complex float *c1, *c2;
+    complex double *c1, *c2;
 
     xsearch = data->xc->xsearch;
     nx_corr = xsearch * 2;
@@ -316,27 +316,27 @@ void corr_thread(gpointer arg, gpointer user_data) {
     // last part of assign_values
     if (data->xc->ri > 1) {
         for (int i=0; i<ny_win; i++) {
-            complex float *interp1 = dft_interpolate(c1 + i*nx_win, nx_win, data->xc->ri, lock);
-            complex float *interp2 = dft_interpolate(c2 + i*nx_win, nx_win, data->xc->ri, lock);
+            complex double *interp1 = dft_interpolate(c1 + i*nx_win, nx_win, data->xc->ri, lock);
+            complex double *interp2 = dft_interpolate(c2 + i*nx_win, nx_win, data->xc->ri, lock);
             int offset = data->xc->ri * nx_win / 2 - nx_win / 2;
 
-            memcpy(&c1[i*nx_win], interp1 + offset, nx_win * sizeof(complex float));
-            memcpy(&c2[i*nx_win], interp2 + offset, nx_win * sizeof(complex float));
+            memcpy(&c1[i*nx_win], interp1 + offset, nx_win * sizeof(complex double));
+            memcpy(&c2[i*nx_win], interp2 + offset, nx_win * sizeof(complex double));
 
             if (lock) pthread_mutex_lock(lock);
-            fftwf_free(interp1);
-            fftwf_free(interp2);
+            fftw_free(interp1);
+            fftw_free(interp2);
             if (lock) pthread_mutex_unlock(lock);
         }
     }
 
     mean1 = mean2 = 0.0;
     for (int i=0; i<nx_win*ny_win; i++) {
-        c1[i] = cabs(c1[i]);
-        c2[i] = cabs(c2[i]);
+        c1[i] = cabsf(c1[i]);
+        c2[i] = cabsf(c2[i]);
 
-        mean1 += creal(c1[i]);
-        mean2 += creal(c2[i]);
+        mean1 += crealf(c1[i]);
+        mean2 += crealf(c2[i]);
     }
 
     mean1 /= nx_win * ny_win;
@@ -359,14 +359,14 @@ void corr_thread(gpointer arg, gpointer user_data) {
 
 
     // calc correlation with 2D FFT
-    complex float *c3;
+    complex double *c3;
     c3 = freq_corr(c1, c2, nx_win, ny_win, lock);
 
-    complex float *corr;
+    complex double *corr;
     corr = c32_array_slice(c3, nx_win, ysearch, ny_corr, xsearch, nx_corr);
 
     //puts("ARRAY corr:");
-    //print_complex_float_array("%+04.2f%+04.2fj\t", corr, ny_corr, nx_corr);
+    //print_complex_double("%+04.2f%+04.2fj\t", corr, ny_corr, nx_corr);
 
     int xpeak, ypeak;
     double cmax, cave, max_corr;
@@ -395,15 +395,15 @@ void corr_thread(gpointer arg, gpointer user_data) {
     //fprintf(stderr, "xypeak: (%d, %d)\n", xpeak, ypeak);
     //fprintf(stderr, "max_corr: %g\n", cmax);
 
-    float xfrac = 0.0, yfrac = 0.0;
+    double xfrac = 0.0, yfrac = 0.0;
 
     // high-res correlation
     if (data->xc->interp_flag) {
         int factor = data->xc->interp_factor;
         int nx_corr2 = data->xc->n2x;
         int ny_corr2 = data->xc->n2y;
-        complex float *corr2;
-        complex float *hi_corr;
+        complex double *corr2;
+        complex double *hi_corr;
 
         assert(nx_corr2 >= 2 && TEST_2PWR(nx_corr2));
         assert(ny_corr2 >= 2 && TEST_2PWR(ny_corr2));
@@ -447,7 +447,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
         for (int i=0, k=0; i<ny_hi; i++)
             for (int j=0; j<nx_hi; j++) {
                 // FIXME: why not cabs? GMTSAR do this
-                double norm = hi_corr[k++];
+                double norm = cabs(hi_corr[k++]);
 
                 if (norm > cmax) {
                     cmax = norm;
@@ -458,8 +458,8 @@ void corr_thread(gpointer arg, gpointer user_data) {
 
         assert(xpeak2 >= -nx_hi/2 && xpeak2 < nx_hi/2);
         assert(ypeak2 >= -ny_hi/2 && ypeak2 < ny_hi/2);
-        xfrac = xpeak2 / (float)factor;
-        yfrac = ypeak2 / (float)factor;
+        xfrac = xpeak2 / (double)factor;
+        yfrac = ypeak2 / (double)factor;
     }
 
     data->xoff = data->xc->x_offset - ((xpeak + xfrac) / data->xc->ri);
@@ -469,10 +469,10 @@ void corr_thread(gpointer arg, gpointer user_data) {
     // printf(" %d %6.3f %d %6.3f %6.2f \n", data->loc_x, xoff, data->loc_y, yoff, cmax);
 
     if (lock) pthread_mutex_lock(lock);
-    fftwf_free(c1);
-    fftwf_free(c2);
-    fftwf_free(c3);
-    fftwf_free(corr);
+    fftw_free(c1);
+    fftw_free(c2);
+    fftw_free(c3);
+    fftw_free(corr);
     if (lock) pthread_mutex_unlock(lock);
 }
 
@@ -483,8 +483,8 @@ void do_correlation(struct st_xcorr *xc, long thread_n) {
     int x_inc, y_inc;
     int nx_win, ny_win;
     int nx_corr, ny_corr;
-    complex float *m_rows, *s_rows;
-    complex float *c1, *c2;
+    complex double *m_rows, *s_rows;
+    complex double *c1, *c2;
     FILE *fmaster, *fslave;
 
     if ((fmaster = fopen(xc->m_path, "rb")) == NULL) {
@@ -549,15 +549,15 @@ void do_correlation(struct st_xcorr *xc, long thread_n) {
 #endif
         }
 
-        fftwf_free(m_rows);
-        fftwf_free(s_rows);
+        fftw_free(m_rows);
+        fftw_free(s_rows);
     }
 
 #ifndef NO_PTHREAD
     g_thread_pool_free(thread_pool, FALSE, TRUE);
     pthread_mutex_destroy(&fftw_lock);
 #endif
-    fftwf_cleanup();
+    fftw_cleanup();
 
     for (int i=0; i<loc_n; i++) {
         struct st_corr_thread_data *p = thread_data + i;
@@ -586,9 +586,6 @@ int main(int argc, char **argv) {
     xcorr.interp_factor = 16;
     xcorr.n2x = 8;
     xcorr.n2y = 8;
-
-    //xcorr.master = load_SLC_c32(master_file, 11304, 27648);
-    //xcorr.slave = load_SLC_c32(slave_file, 11304, 27648);
 
     thread_n = sysconf(_SC_NPROCESSORS_ONLN);
     fprintf(stderr, "use %ld thread(s)\n", thread_n);
