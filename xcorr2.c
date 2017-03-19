@@ -11,7 +11,7 @@
 #include <glib.h>
 #include <unistd.h>
 #include <stdbool.h>
-
+#include <getopt.h>
 
 struct st_xcorr {
     int m_nx, m_ny;
@@ -410,22 +410,51 @@ void do_correlation(struct st_xcorr *xc, long thread_n) {
     }
 }
 
+void parse_prm(struct st_xcorr *xcorr, const char *mfile, const char *sfile) {
+    int num_patches, num_valid_az;
+    double prf[2];
+    struct prm_handler m_prm = prm_open(mfile);
+    struct prm_handler s_prm = prm_open(sfile);
+
+    xcorr->m_path = strdup(prm_get_str(m_prm, "SLC_file"));
+    xcorr->s_path = strdup(prm_get_str(s_prm, "SLC_file"));
+    fprintf(stderr, "Master SLC: %s\n", xcorr->m_path);
+    fprintf(stderr, "Slave SLC: %s\n", xcorr->s_path);
+
+    xcorr->m_nx = prm_get_int(m_prm, "num_rng_bins");
+    num_patches = prm_get_int(m_prm, "num_patches");
+    num_valid_az = prm_get_int(m_prm, "num_valid_az");
+    xcorr->m_ny = num_patches * num_valid_az;
+
+    xcorr->s_nx = prm_get_int(s_prm, "num_rng_bins");
+    num_patches = prm_get_int(s_prm, "num_patches");
+    num_valid_az = prm_get_int(s_prm, "num_valid_az");
+    xcorr->m_ny = num_patches * num_valid_az;
+
+
+    prf[0] = prm_get_f64(m_prm, "PRF");
+    prf[1] = prm_get_f64(s_prm, "PRF");
+    xcorr->astretcha = prf[0] > 0 ? (prf[1] - prf[0]) / prf[0] : 0.0;
+
+    prm_close(&m_prm);
+    prm_close(&s_prm);
+}
+
 int main(int argc, char **argv) {
+    const char *m_prm_path = argv[1];
+    const char *s_prm_path = argv[2];
     struct st_xcorr xcorr;
     long thread_n;
 
-    xcorr.m_path = argv[1];
-    xcorr.s_path = argv[2];
-    xcorr.m_nx = xcorr.s_nx = 11304;
-    xcorr.m_ny = xcorr.s_ny = 27648;
+    parse_prm(&xcorr, m_prm_path, s_prm_path);
+
     xcorr.xsearch = xcorr.ysearch = 64;
     xcorr.nxl = 16;
     //xcorr.nxl = 2;
     xcorr.nyl = 32;
     //xcorr.nyl = 4;
-    xcorr.x_offset = -129;
-    xcorr.y_offset = 62;
-    xcorr.astretcha = 0;
+    xcorr.x_offset = -139;
+    xcorr.y_offset = 66;
     xcorr.ri = 2;
     xcorr.interp_flag = true;
     xcorr.interp_factor = 16;
@@ -435,8 +464,8 @@ int main(int argc, char **argv) {
     fprintf(stderr, "use %ld thread(s)\n", thread_n);
     do_correlation(&xcorr, thread_n);
 
-    //free(xcorr.master);
-    //free(xcorr.slave);
+    free(xcorr.m_path);
+    free(xcorr.s_path);
 
     return 0;
 }
