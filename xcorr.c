@@ -136,42 +136,73 @@ void f64_array_stats(
     if (argmax_x) *argmax_x = xm;
 }
 
-complex double *dft_interpolate(
+complex double *dft_interpolate_2d(
         complex double *in,
-        int length,
-        int scale,
+        int height, int width,
+        int scale_h, int scale_w,
         pthread_mutex_t *fftw_lock) {
 
     fftw_plan plan1, plan2;
+    int out_height, out_width;
     complex double *in_fft;
+    complex double *out_fft;
     complex double *out;
 
-    assert(length >= 2 && TEST_2PWR(length));
-    assert(scale >= 2 && TEST_2PWR(scale));
+    assert(height >= 2 && TEST_2PWR(height));
+    assert(width >= 2 && TEST_2PWR(width));
+    assert(scale_w >= 1 && scale_h >= 1);
+
+    out_height = height * scale_h;
+    out_width = width * scale_w;
     
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    in_fft = fftw_alloc_complex(length * scale);
-    out = fftw_alloc_complex(length * scale);
-    plan1 = fftw_plan_dft_1d(length, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan2 = fftw_plan_dft_1d(length * scale, in_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
+    in_fft = fftw_alloc_complex(height * width);
+    out_fft = fftw_alloc_complex(out_height * out_width);
+    out = fftw_alloc_complex(out_height * out_width);
+    plan1 = fftw_plan_dft_2d(height, width, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+    plan2 = fftw_plan_dft_2d(out_height, out_width, out_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
     fftw_execute(plan1);
 
-    int tail_offset = (scale - 1) * length;
-    memcpy(&in_fft[length/2 + tail_offset], &in_fft[length/2], length/2 * sizeof(complex double));
-    memset(&in_fft[length/2], 0, tail_offset * sizeof(complex double));
+    int y_offset = out_height - height;
+    for (int y=0; y<out_height; y++) {
+        int sy;
+        complex double *out_fft_row = &out_fft[y*out_width];
+        complex double *in_fft_row;
+
+        if (y < height / 2)
+            sy = y;
+        else if (y >= out_height - height/2)
+            sy = y - y_offset;
+        else {
+            memset(out_fft_row, 0, out_width * sizeof(complex double));
+            continue;
+        }
+
+        in_fft_row = &in_fft[sy*width];
+
+        memcpy(out_fft_row, in_fft_row, width/2 * sizeof(complex double));
+        memset(&out_fft_row[width/2], 0, (out_width - width) * sizeof(complex double));
+        memcpy(&out_fft_row[out_width - width/2], &in_fft_row[width/2], width/2 * sizeof(complex double));
+
+        out_fft_row[out_width - width/2] /= 2;
+        out_fft_row[width/2] = out_fft_row[out_width - width/2];
+    }
 
     fftw_execute(plan2);
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
     fftw_free(in_fft);
+    fftw_free(out_fft);
     fftw_destroy_plan(plan1);
     fftw_destroy_plan(plan2);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
-    for (int i=0; i<scale*length; i++)
-        out[i] /= length;
+    // FIXME: remove this later
+    // scale to match GMTSAR for debugging
+    for (int i=0; i<out_height*out_width; i++)
+        out[i] /= height * width;
 
     return out;
 }
@@ -189,9 +220,8 @@ double *rdft_interpolate_2d(
     double *out;
 
     assert(height >= 2 && TEST_2PWR(height));
-    assert(scale_h >= 2 && TEST_2PWR(scale_h));
     assert(width >= 2 && TEST_2PWR(width));
-    assert(scale_w >= 2 && TEST_2PWR(scale_w));
+    assert(scale_w >= 1 && scale_h >= 1);
 
     out_height = height * scale_h;
     out_width = width * scale_w;
@@ -210,7 +240,7 @@ double *rdft_interpolate_2d(
     for (int y=0; y<out_height; y++) {
         int sy;
         complex double *out_fft_row = &out_fft[y*(out_width/2+1)];
-        complex double *in_fft_row = &in_fft[sy*(width/2+1)];
+        complex double *in_fft_row;
 
         if (y < height / 2)
             sy = y;
@@ -353,19 +383,22 @@ void corr_thread(gpointer arg, gpointer user_data) {
 
     // last part of assign_values
     if (data->xc->ri > 1) {
-        for (int i=0; i<ny_win; i++) {
-            complex double *interp1 = dft_interpolate(c1 + i*nx_win, nx_win, data->xc->ri, lock);
-            complex double *interp2 = dft_interpolate(c2 + i*nx_win, nx_win, data->xc->ri, lock);
-            int offset = data->xc->ri * nx_win / 2 - nx_win / 2;
+        complex double *interp1, *interp2;
+        int interp_width;
 
-            memcpy(&c1[i*nx_win], interp1 + offset, nx_win * sizeof(complex double));
-            memcpy(&c2[i*nx_win], interp2 + offset, nx_win * sizeof(complex double));
+        interp1 = dft_interpolate_2d(c1, ny_win, nx_win, 1, data->xc->ri, lock);
+        interp2 = dft_interpolate_2d(c2, ny_win, nx_win, 1, data->xc->ri, lock);
+        interp_width = data->xc->ri * nx_win;
 
-            if (lock) pthread_mutex_lock(lock);
-            fftw_free(interp1);
-            fftw_free(interp2);
-            if (lock) pthread_mutex_unlock(lock);
-        }
+        if (lock) pthread_mutex_lock(lock);
+        fftw_free(c1);
+        fftw_free(c2);
+        if (lock) pthread_mutex_unlock(lock);
+
+        c1 = c64_array_slice(interp1, interp_width,
+                0, ny_win, interp_width/2 - nx_win/2, nx_win);
+        c2 = c64_array_slice(interp2, interp_width,
+                0, ny_win, interp_width/2 - nx_win/2, nx_win);
     }
 
     mean1 = mean2 = 0.0;
