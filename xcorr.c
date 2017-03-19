@@ -275,8 +275,8 @@ double *rdft_interpolate_2d(
 }
 
 long double time_corr(
-        complex double *c1,
-        complex double *c2,
+        const double *c1r,
+        const double *c2r,
         int xsearch, int ysearch,
         int xoff, int yoff) {
 
@@ -293,8 +293,8 @@ long double time_corr(
     num = denom1 = denom2 = 0.0;
     for (int i=0; i<ny_corr; i++)
         for (int j=0; j<nx_corr; j++) {
-            long double a = c1[(ysearch + i + yoff) * nx_win + (xsearch + j + xoff)];
-            long double b = c2[(ysearch + i) * nx_win + (xsearch + j)];
+            long double a = c1r[(ysearch + i + yoff) * nx_win + (xsearch + j + xoff)];
+            long double b = c2r[(ysearch + i) * nx_win + (xsearch + j)];
 
             num += a * b;
             denom1 += a * a;
@@ -312,64 +312,63 @@ long double time_corr(
     return result;
 }
 
-complex double *freq_corr(
-        complex double *c1,
-        complex double *c2,
+double *freq_corr(
+        double *c1r,
+        double *c2r,
         int nx_win, int ny_win,
         pthread_mutex_t *fftw_lock) {
-    complex double *c1_fft, *c2_fft, *c3;
+    complex double *c1r_fft, *c2r_fft;
+    double *c3r;
     fftw_plan plan1, plan2, plan3;
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    c1_fft = fftw_alloc_complex(nx_win * ny_win);
-    c2_fft = fftw_alloc_complex(nx_win * ny_win);
-    c3 = fftw_alloc_complex(nx_win * ny_win);
+    c1r_fft = fftw_alloc_complex(ny_win * (nx_win/2+1));
+    c2r_fft = fftw_alloc_complex(ny_win * (nx_win/2+1));
+    c3r = fftw_alloc_real(nx_win * ny_win);
 
-    plan1 = fftw_plan_dft_2d(ny_win, nx_win, c1, c1_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan2 = fftw_plan_dft_2d(ny_win, nx_win, c2, c2_fft, FFTW_FORWARD, FFTW_ESTIMATE);
-    plan3 = fftw_plan_dft_2d(ny_win, nx_win, c1_fft, c3, FFTW_BACKWARD, FFTW_ESTIMATE);
+    plan1 = fftw_plan_dft_r2c_2d(ny_win, nx_win, c1r, c1r_fft, FFTW_ESTIMATE);
+    plan2 = fftw_plan_dft_r2c_2d(ny_win, nx_win, c2r, c2r_fft, FFTW_ESTIMATE);
+    plan3 = fftw_plan_dft_c2r_2d(ny_win, nx_win, c1r_fft, c3r, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
     fftw_execute(plan1);
     fftw_execute(plan2);
 
     int isign = 1;
-    for (int i=0; i<ny_win; i++) {
-        for (int j=0; j<nx_win; j++) {
-            c1_fft[i*nx_win + j] *= isign * conj(c2_fft[i*nx_win + j]);
+    for (int i=0, k=0; i<ny_win; i++) {
+        for (int j=0; j<nx_win/2+1; j++, k++) {
+            c1r_fft[k] *= isign * conj(c2r_fft[k]);
             isign = -isign;
         }
-
-        isign = -isign;
     }
 
     fftw_execute(plan3);
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    fftw_free(c1_fft);
-    fftw_free(c2_fft);
+    fftw_free(c1r_fft);
+    fftw_free(c2r_fft);
     fftw_destroy_plan(plan1);
     fftw_destroy_plan(plan2);
     fftw_destroy_plan(plan3);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
 
-    // FIXME: remove this later
+    // FIXME: remove scaling later
     // scale to match GMTSAR for debugging
     for (int i=0; i<nx_win*ny_win; i++)
-        c3[i] /= nx_win * ny_win;
+        c3r[i] = fabs(c3r[i] / (nx_win * ny_win));
 
-    return c3;
+    return c3r;
 }
 
 void corr_thread(gpointer arg, gpointer user_data) {
     struct st_corr_thread_data *data = arg;
     pthread_mutex_t *lock = user_data;
 
-    double mean1, mean2;
     int xsearch, ysearch;
     int nx_corr, ny_corr;
     int nx_win, ny_win;
     complex double *c1, *c2;
+    double *c1r, *c2r;
 
     xsearch = data->xc->xsearch;
     nx_corr = xsearch * 2;
@@ -401,21 +400,25 @@ void corr_thread(gpointer arg, gpointer user_data) {
                 0, ny_win, interp_width/2 - nx_win/2, nx_win);
     }
 
-    mean1 = mean2 = 0.0;
-    for (int i=0; i<nx_win*ny_win; i++) {
-        c1[i] = cabs(c1[i]);
-        c2[i] = cabs(c2[i]);
+    c1r = fftw_alloc_real(nx_win * ny_win);
+    c2r = fftw_alloc_real(nx_win * ny_win);
 
-        mean1 += creal(c1[i]);
-        mean2 += creal(c2[i]);
+    double mean1 = 0.0, mean2 = 0.0;
+    for (int k=0; k<nx_win*ny_win; k++) {
+        mean1 += (c1r[k] = cabs(c1[k]));
+        mean2 += (c2r[k] = cabs(c2[k]));
     }
+
+    if (lock) pthread_mutex_lock(lock);
+    fftw_free(c1);
+    fftw_free(c2);
+    if (lock) pthread_mutex_unlock(lock);
 
     mean1 /= nx_win * ny_win;
     mean2 /= nx_win * ny_win;
-
-    for (int i=0; i<nx_win*ny_win; i++) {
-        c1[i] -= mean1;
-        c2[i] -= mean2;
+    for (int k=0; k<nx_win*ny_win; k++) {
+        c1r[k] -= mean1;
+        c2r[k] -= mean2;
     }
 
     // make_mask and mask
@@ -425,19 +428,14 @@ void corr_thread(gpointer arg, gpointer user_data) {
                     || i >= ny_win - ysearch
                     || j < xsearch
                     || j >= nx_win - xsearch)
-                c2[i*nx_win + j] = 0;
+                c2r[i*nx_win + j] = 0;
         }
 
 
     // calc correlation with 2D FFT
-    complex double *c3, *corr_c;
-    c3 = freq_corr(c1, c2, nx_win, ny_win, lock);
-    corr_c = c64_array_slice(c3, nx_win, ysearch, ny_corr, xsearch, nx_corr);
-
-    double *corr;
-    corr = fftw_alloc_real(nx_corr * ny_corr);
-    for (int k=0; k<nx_corr*ny_corr; k++)
-        corr[k] = cabs(corr_c[k]);
+    double *c3r, *corr;
+    c3r = freq_corr(c1r, c2r, nx_win, ny_win, lock);
+    corr = f64_array_slice(c3r, nx_win, ysearch, ny_corr, xsearch, nx_corr);
 
     //puts("ARRAY corr:");
     //print_complex_double("%+04.2f%+04.2fj\t", corr, ny_corr, nx_corr);
@@ -449,8 +447,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
     xpeak -= xsearch;
     ypeak -= ysearch;
 
-    cave /= nx_corr * ny_corr;
-    max_corr = time_corr(c1, c2, xsearch, ysearch, xpeak, ypeak);
+    max_corr = time_corr(c1r, c2r, xsearch, ysearch, xpeak, ypeak);
 
     //fprintf(stderr, "xypeak: (%d, %d)\n", xpeak, ypeak);
     //fprintf(stderr, "max_corr: %g\n", cmax);
@@ -517,9 +514,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
     // printf(" %d %6.3f %d %6.3f %6.2f \n", data->loc_x, xoff, data->loc_y, yoff, cmax);
 
     if (lock) pthread_mutex_lock(lock);
-    fftw_free(c1);
-    fftw_free(c2);
-    fftw_free(c3);
+    fftw_free(c3r);
     fftw_free(corr);
     if (lock) pthread_mutex_unlock(lock);
 }
