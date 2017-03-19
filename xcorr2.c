@@ -85,12 +85,11 @@ long double time_corr(
         int xoff, int yoff) {
 
     int nx_corr, ny_corr;
-    int nx_win, ny_win;
+    int nx_win;
 
     nx_corr = xsearch * 2;
     nx_win = nx_corr * 2;
     ny_corr = ysearch * 2;
-    ny_win = ny_corr * 2;
 
     long double num, denom, denom1, denom2, result;
 
@@ -455,7 +454,11 @@ void apply_args(const struct st_xcorr_args *args, struct st_xcorr *xc) {
 
     xc->nxl = args->nx ? args->nx : 16;
     xc->nyl = args->ny ? args->ny : 32;
-    xc->ri = args->norange ? 1 : 2;
+
+    if (args->norange)
+        xc->ri = 1;
+    else
+        xc->ri = args->range_interp ? args->range_interp : 2;
 
     if (args->nointerp)
         xc->interp_factor = 1;
@@ -553,6 +556,9 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
             case OPT_INTERP:
                 xa->interp = int_arg;
                 break;
+            case OPT_RANGE_INTERP:
+                xa->range_interp = int_arg;
+                break;
             case OPT_NO_SHIFT:
                 xa->noshift = true;
                 break;
@@ -588,13 +594,15 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
 int main(int argc, char **argv) {
     struct st_xcorr_args args;
     struct st_xcorr xcorr;
-    long thread_n;
+    long thread_n = 0;
 
     parse_opts(&args, argc, argv);
     apply_args(&args, &xcorr);
 
+#ifndef NO_PTHREAD
     thread_n = sysconf(_SC_NPROCESSORS_ONLN);
     fprintf(stderr, "use %ld thread(s)\n", thread_n);
+#endif
     do_correlation(&xcorr, thread_n);
 
     free(xcorr.m_path);
