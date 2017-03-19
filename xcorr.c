@@ -398,6 +398,11 @@ void corr_thread(gpointer arg, gpointer user_data) {
                 0, ny_win, interp_width/2 - nx_win/2, nx_win);
         c2 = c64_array_slice(interp2, interp_width,
                 0, ny_win, interp_width/2 - nx_win/2, nx_win);
+
+        if (lock) pthread_mutex_lock(lock);
+        fftw_free(interp1);
+        fftw_free(interp2);
+        if (lock) pthread_mutex_unlock(lock);
     }
 
     c1r = fftw_alloc_real(nx_win * ny_win);
@@ -448,6 +453,11 @@ void corr_thread(gpointer arg, gpointer user_data) {
     ypeak -= ysearch;
 
     max_corr = time_corr(c1r, c2r, xsearch, ysearch, xpeak, ypeak);
+
+    if (lock) pthread_mutex_lock(lock);
+    fftw_free(c1r);
+    fftw_free(c2r);
+    if (lock) pthread_mutex_unlock(lock);
 
     //fprintf(stderr, "xypeak: (%d, %d)\n", xpeak, ypeak);
     //fprintf(stderr, "max_corr: %g\n", cmax);
@@ -505,6 +515,11 @@ void corr_thread(gpointer arg, gpointer user_data) {
 
         xfrac = xpeak2 / (double)factor;
         yfrac = ypeak2 / (double)factor;
+
+        if (lock) pthread_mutex_lock(lock);
+        fftw_free(corr2);
+        fftw_free(hi_corr);
+        if (lock) pthread_mutex_unlock(lock);
     }
 
     data->xoff = data->xc->x_offset - ((xpeak + xfrac) / data->xc->ri);
