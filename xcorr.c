@@ -59,7 +59,7 @@ complex double *load_slc_rows(FILE *fin, int start, int n_rows, int nx) {
     fseek(fin, offset, SEEK_SET);
 
     tmp = malloc(nx * sizeof(short) * 2);
-    arr = fftw_malloc(n_rows * nx * sizeof(complex double));
+    arr = fftw_alloc_complex(n_rows * nx);
 
     for (int i=0; i<n_rows; i++) {
         if (fread(tmp, 2*sizeof(short), nx, fin) != (unsigned long)nx) {
@@ -83,7 +83,7 @@ complex double *c64_array_slice(
     assert(tl_y >= 0 && tl_x >= 0 && tl_x < n_cols);
 
     complex double *arr;
-    arr = fftw_malloc(s_x * s_y * sizeof(complex double));
+    arr = fftw_alloc_complex(s_x * s_y);
 
     for (int i=0; i<s_y; i++)
         memcpy(&arr[i*s_x], &mat[(i+tl_y)*n_cols + tl_x], s_x * sizeof(complex double));
@@ -99,7 +99,7 @@ double *f64_array_slice(
     assert(tl_y >= 0 && tl_x >= 0 && tl_x < n_cols);
 
     double *arr;
-    arr = fftw_malloc(s_x * s_y * sizeof(double));
+    arr = fftw_alloc_real(s_x * s_y);
 
     for (int i=0; i<s_y; i++)
         memcpy(&arr[i*s_x], &mat[(i+tl_y)*n_cols + tl_x], s_x * sizeof(double));
@@ -150,8 +150,8 @@ complex double *dft_interpolate(
     assert(scale >= 2 && TEST_2PWR(scale));
     
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    in_fft = fftw_malloc(length * sizeof(complex double) * scale);
-    out = fftw_malloc(length * sizeof(complex double) * scale);
+    in_fft = fftw_alloc_complex(length * scale);
+    out = fftw_alloc_complex(length * scale);
     plan1 = fftw_plan_dft_1d(length, in, in_fft, FFTW_FORWARD, FFTW_ESTIMATE);
     plan2 = fftw_plan_dft_1d(length * scale, in_fft, out, FFTW_BACKWARD, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
@@ -197,9 +197,9 @@ double *rdft_interpolate_2d(
     out_width = width * scale_w;
     
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    in_fft = fftw_malloc(height * (width/2 + 1) * sizeof(complex double));
-    out_fft = fftw_malloc(out_height * (out_width/2 + 1) * sizeof(complex double));
-    out = fftw_malloc(out_height * out_width * sizeof(double));
+    in_fft = fftw_alloc_complex(height * (width/2 + 1));
+    out_fft = fftw_alloc_complex(out_height * (out_width/2 + 1));
+    out = fftw_alloc_real(out_height * out_width);
     plan1 = fftw_plan_dft_r2c_2d(height, width, in, in_fft, FFTW_ESTIMATE);
     plan2 = fftw_plan_dft_c2r_2d(out_height, out_width, out_fft, out, FFTW_ESTIMATE);
     if (fftw_lock) pthread_mutex_unlock(fftw_lock);
@@ -208,9 +208,9 @@ double *rdft_interpolate_2d(
 
     int y_offset = out_height - height;
     for (int y=0; y<out_height; y++) {
-        int x, sy;
+        int sy;
         complex double *out_fft_row = &out_fft[y*(out_width/2+1)];
-        complex double *in_fft_row;
+        complex double *in_fft_row = &in_fft[sy*(width/2+1)];
 
         if (y < height / 2)
             sy = y;
@@ -222,13 +222,9 @@ double *rdft_interpolate_2d(
         }
 
         in_fft_row = &in_fft[sy*(width/2+1)];
-        for (x=0; x<width/2; x++)
-            out_fft_row[x] = in_fft_row[x];
-
-        out_fft_row[x] = in_fft_row[x] / 2;
-
-        for (++x; x<out_width/2+1; x++)
-            out_fft_row[x] = 0;
+        memcpy(out_fft_row, in_fft_row, (width/2) * sizeof(complex double));
+        out_fft_row[width/2] = in_fft_row[width/2] / 2;
+        memset(&out_fft_row[width/2+1], 0, ((out_width - width)/2) * sizeof(complex double));
     }
 
     fftw_execute(plan2);
@@ -295,9 +291,9 @@ complex double *freq_corr(
     fftw_plan plan1, plan2, plan3;
 
     if (fftw_lock) pthread_mutex_lock(fftw_lock);
-    c1_fft = fftw_malloc(nx_win * ny_win * sizeof(complex double));
-    c2_fft = fftw_malloc(nx_win * ny_win * sizeof(complex double));
-    c3 = fftw_malloc(nx_win * ny_win * sizeof(complex double));
+    c1_fft = fftw_alloc_complex(nx_win * ny_win);
+    c2_fft = fftw_alloc_complex(nx_win * ny_win);
+    c3 = fftw_alloc_complex(nx_win * ny_win);
 
     plan1 = fftw_plan_dft_2d(ny_win, nx_win, c1, c1_fft, FFTW_FORWARD, FFTW_ESTIMATE);
     plan2 = fftw_plan_dft_2d(ny_win, nx_win, c2, c2_fft, FFTW_FORWARD, FFTW_ESTIMATE);
@@ -406,7 +402,7 @@ void corr_thread(gpointer arg, gpointer user_data) {
     corr_c = c64_array_slice(c3, nx_win, ysearch, ny_corr, xsearch, nx_corr);
 
     double *corr;
-    corr = fftw_malloc(nx_corr * ny_corr * sizeof(double));
+    corr = fftw_alloc_real(nx_corr * ny_corr);
     for (int k=0; k<nx_corr*ny_corr; k++)
         corr[k] = cabs(corr_c[k]);
 
