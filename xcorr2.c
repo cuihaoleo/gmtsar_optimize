@@ -20,7 +20,7 @@ struct st_xcorr {
     int x_offset, y_offset;
     int xsearch, ysearch;
     int nxl, nyl;
-    int astretcha;
+    double astretcha;
 
     int ri;
     int interp_factor;
