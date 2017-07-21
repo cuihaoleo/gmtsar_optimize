@@ -7,6 +7,7 @@ extern "C" {
 #undef complex
 #include <arrayfire.h>
 #include <cstring>
+#include <cassert>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
@@ -254,7 +255,7 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     af::seq &out_left = left;
     af::seq right = af::seq(width/2, width-1);
     af::seq out_right = af::seq(out_width-width/2, out_width-1);;
-    af::seq up = af::seq(0, height/2);
+    af::seq up = af::seq(0, height/2-1);
     af::seq &out_up = up;
     af::seq down = af::seq(height/2, height-1);
     af::seq out_down = af::seq(out_height-height/2, out_height-1);;
@@ -377,8 +378,8 @@ int main(int argc, char **argv) {
             corr = af::abs(corr);
 
             unsigned max_idx;
-            double max_val;
-            af::max<double>(&max_val, &max_idx, corr);
+            double cmax;
+            af::max<double>(&cmax, &max_idx, corr);
 
             //printf("MAX VAL: %lf \n", max_val);
             //printf("MAX IDX: %u \n", max_idx);
@@ -396,8 +397,55 @@ int main(int argc, char **argv) {
             double denom2 = af::norm(core2);
             double max_corr = 100 * fabs(num / (denom1 * denom2));
 
-            double xoff = xcorr.x_offset - (1.0 * xpeak / xcorr.ri);
-            double yoff = xcorr.y_offset - ypeak + loc_y * xcorr.astretcha;
+            double xfrac = 0.0, yfrac = 0.0;
+            if (xcorr.interp_factor > 1) {
+                int factor = xcorr.interp_factor;
+                int nx_corr2 = xcorr.n2x;
+                int ny_corr2 = xcorr.n2y;
+
+                // FIXME: remove this later
+                // scale to match GMTSAR for debugging
+                corr *= max_corr / cmax;
+
+                // FIXME: original GMTSAR are vulnerable to memory violation
+                // offset ypeak and xpeak to fix
+                if (ypeak + ysearch < ny_corr2/2)
+                    ypeak = ny_corr2 / 2 - ysearch;
+                else if (ypeak + ysearch >= ny_corr - ny_corr2/2)
+                    ypeak = ny_corr - ny_corr2/2 - ysearch - 1;
+
+                if (xpeak + xsearch < nx_corr2/2)
+                    xpeak = nx_corr2 / 2 - xsearch;
+                else if (xpeak + xsearch >= nx_corr - nx_corr2/2)
+                    xpeak = nx_corr - nx_corr2/2 - xsearch - 1;
+
+                af::array corr2 = corr(
+                        af::seq(ypeak + ysearch - ny_corr2/2, ypeak + ysearch + ny_corr2/2 - 1),
+                        af::seq(xpeak + xsearch - nx_corr2/2, xpeak + xsearch + nx_corr2/2 - 1));
+                corr2 = af::pow(corr2, 0.25);
+
+                af::array hi_corr = dft_interpolate(corr2, factor, factor);
+                hi_corr = af::abs(hi_corr);
+         
+                int ny_hi = ny_corr2 * factor;
+                int nx_hi = nx_corr2 * factor;
+
+                unsigned max_idx;
+                double cmax;
+                af::max<double>(&cmax, &max_idx, hi_corr);
+
+                int xpeak2 = max_idx / ny_hi - nx_hi / 2;
+                int ypeak2 = max_idx % ny_hi - ny_hi / 2;
+
+                assert(xpeak2 >= -nx_hi/2 && xpeak2 < nx_hi/2);
+                assert(ypeak2 >= -ny_hi/2 && ypeak2 < ny_hi/2);
+
+                xfrac = xpeak2 / (double)factor;
+                yfrac = ypeak2 / (double)factor;
+            }
+
+            double xoff = xcorr.x_offset - ((xpeak + xfrac) / xcorr.ri);
+            double yoff = xcorr.y_offset - (ypeak + yfrac) + loc_y * xcorr.astretcha;
 
             //printf("NUM: %lf \n", num);
             //printf("DE1: %lf \n", denom1);
