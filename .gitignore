@@ -1,0 +1,5 @@
+*.o
+a.out
+xcorr2
+xcorr2_af
+.ycm_extra_conf.py
