@@ -217,7 +217,7 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
     }
 }
 
-void load_slc_rows(std::ifstream &fin, af::array &dest, int start, int n_rows, int nx) {
+af::array load_slc_rows(std::ifstream &fin, int start, int n_rows, int nx) {
     long offset;
 
     offset = nx * start * sizeof(short) * 2;
@@ -226,20 +226,12 @@ void load_slc_rows(std::ifstream &fin, af::array &dest, int start, int n_rows, i
     int16_t *buf = new int16_t[n_rows * nx * 2];
     fin.read((char*)buf, n_rows * nx * sizeof(int16_t) * 2);
 
-    double *buf_real = new double[n_rows * nx];
-    double *buf_imag = new double[n_rows * nx];
-    for (int i=0; i<n_rows; i++)
-        for (int j=0; j<nx; j++) {
-            buf_real[i + j*n_rows] = buf[2*(i*nx+j)];
-            buf_imag[i + j*n_rows] = buf[2*(i*nx+j) + 1];
-        }
-
-    af::array af_real(n_rows, nx, buf_real);
-    af::array af_imag(n_rows, nx, buf_imag);
-
-    dest = af::complex(af_real, af_imag);
-
+    af::array af_buf(2, nx, n_rows, buf);
+    af::array dest = af::complex(af_buf(0, af::span, af::span), af_buf(1, af::span, af::span));
+    dest = af::moddims(dest, nx, n_rows);
     delete[] buf;
+
+    return af::transpose(dest);
 }
 
 af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
@@ -249,7 +241,7 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     int out_width = width * scale_w;
 
     af::array in_fft = af::dft(in);
-    af::array out_fft = af::array(out_height, out_width, c64);
+    af::array out_fft = af::array(out_height, out_width, c32);
 
     af::seq left = af::seq(0, width/2);
     af::seq &out_left = left;
@@ -316,17 +308,18 @@ int main(int argc, char **argv) {
     for (int i=0; i<nx_win; i++)
         for (int j=0; j<ny_win; j++)
             corr_mask_arr[i*ny_win + j] = ((i + j) & 1) ? -1 : 1;
+
     af::array corr_mask(ny_win, nx_win, corr_mask_arr);
     delete[] corr_mask_arr;
 
+    af::array m_rows;
+    af::array s_rows;
     for (int j=1; j<=xcorr.nyl; j++) {
         loc_y = ny_win + j * y_inc;
         slave_loc_y = (1+xcorr.astretcha)*loc_y + xcorr.y_offset;
 
-        af::array m_rows;
-        af::array s_rows;
-        load_slc_rows(f1, m_rows, loc_y-ny_win/2, ny_win, xcorr.m_nx);
-        load_slc_rows(f2, s_rows, slave_loc_y-ny_win/2, ny_win, xcorr.m_nx);
+        m_rows = load_slc_rows(f1, loc_y-ny_win/2, ny_win, xcorr.m_nx);
+        s_rows = load_slc_rows(f2, slave_loc_y-ny_win/2, ny_win, xcorr.m_nx);
 
         for (int i=2; i<=xcorr.nxl+1; i++) {
             loc_x = nx_win + i * x_inc;
@@ -335,8 +328,9 @@ int main(int argc, char **argv) {
             const af::seq slice_x(loc_x - nx_win/2, loc_x + nx_win/2 - 1);
             const af::seq slave_slice_x(slave_loc_x - nx_win/2, slave_loc_x + nx_win/2 - 1);
 
-            af::array c1 = m_rows(af::span, slice_x);
-            af::array c2 = s_rows(af::span, slave_slice_x);
+            af::array c1, c2;
+            c1 = m_rows(af::span, slice_x);
+            c2 = s_rows(af::span, slave_slice_x);
 
             if (xcorr.ri > 1) {
                 af::array interp1, interp2;
@@ -353,15 +347,15 @@ int main(int argc, char **argv) {
             af::array c1r = af::abs(c1);
             af::array c2ro = af::abs(c2);
 
-            double m1 = af::mean<double>(c1r);
-            double m2 = af::mean<double>(c2ro);
+            float m1 = af::mean<float>(c1r);
+            float m2 = af::mean<float>(c2ro);
             //std::cout << m1 << std::endl;
             //std::cout << m2 << std::endl;
 
             c1r -= m1;
             c2ro -= m2;
 
-            af::array c2r(ny_win, nx_win, f64);
+            af::array c2r(ny_win, nx_win, f32);
             c2r = 0;
 
             af::seq roi_y(ysearch, ny_win - ysearch - 1);
@@ -378,8 +372,8 @@ int main(int argc, char **argv) {
             corr = af::abs(corr);
 
             unsigned max_idx;
-            double cmax;
-            af::max<double>(&cmax, &max_idx, corr);
+            float cmax;
+            af::max<float>(&cmax, &max_idx, corr);
 
             //printf("MAX VAL: %lf \n", max_val);
             //printf("MAX IDX: %u \n", max_idx);
@@ -392,12 +386,12 @@ int main(int argc, char **argv) {
             af::array core2 = c2r(
                 af::seq(ysearch, ysearch + ny_corr - 1),
                 af::seq(xsearch, xsearch + nx_corr - 1));
-            double num = af::sum<double>(core1 * core2);
-            double denom1 = af::norm(core1);
-            double denom2 = af::norm(core2);
-            double max_corr = 100 * fabs(num / (denom1 * denom2));
+            float num = af::sum<float>(core1 * core2);
+            float denom1 = af::norm(core1);
+            float denom2 = af::norm(core2);
+            float max_corr = 100 * fabs(num / (denom1 * denom2));
 
-            double xfrac = 0.0, yfrac = 0.0;
+            float xfrac = 0.0, yfrac = 0.0;
             if (xcorr.interp_factor > 1) {
                 int factor = xcorr.interp_factor;
                 int nx_corr2 = xcorr.n2x;
@@ -431,8 +425,8 @@ int main(int argc, char **argv) {
                 int nx_hi = nx_corr2 * factor;
 
                 unsigned max_idx;
-                double cmax;
-                af::max<double>(&cmax, &max_idx, hi_corr);
+                float cmax;
+                af::max<float>(&cmax, &max_idx, hi_corr);
 
                 int xpeak2 = max_idx / ny_hi - nx_hi / 2;
                 int ypeak2 = max_idx % ny_hi - ny_hi / 2;
@@ -440,35 +434,19 @@ int main(int argc, char **argv) {
                 assert(xpeak2 >= -nx_hi/2 && xpeak2 < nx_hi/2);
                 assert(ypeak2 >= -ny_hi/2 && ypeak2 < ny_hi/2);
 
-                xfrac = xpeak2 / (double)factor;
-                yfrac = ypeak2 / (double)factor;
+                xfrac = xpeak2 / (float)factor;
+                yfrac = ypeak2 / (float)factor;
             }
 
-            double xoff = xcorr.x_offset - ((xpeak + xfrac) / xcorr.ri);
-            double yoff = xcorr.y_offset - (ypeak + yfrac) + loc_y * xcorr.astretcha;
-
-            //printf("NUM: %lf \n", num);
-            //printf("DE1: %lf \n", denom1);
-            //printf("DE2: %lf \n", denom2);
-            //printf("MCI: %lf \n", max_corr);
-
+            float xoff = xcorr.x_offset - ((xpeak + xfrac) / xcorr.ri);
+            float yoff = xcorr.y_offset - (ypeak + yfrac) + loc_y * xcorr.astretcha;
             printf(" %d %6.3lf %d %6.3lf %6.2lf \n", loc_x, xoff, loc_y, yoff, max_corr);
-            //af::print("lop", c1r);
-            //af::print("lop", c2r);
-            //af::print("lop", c2r(ysearch, xsearch));
-            //af::print("lop", corr);
-            //fprintf(stderr, "LOC#%d (%d, %d) <=> (%d, %d)\n", loc_n, loc_x, loc_y, slave_loc_x, slave_loc_y);
-
-            //c1 = c64_array_slice(m_rows, xcorr.m_nx, 0, ny_win, loc_x-nx_win/2, nx_win);
-            //c2 = c64_array_slice(s_rows, xcorr.s_nx, 0, ny_win, slave_loc_x-nx_win/2, nx_win);
- 
-            //corr_thread(p, NULL);
         }
     }
 
     end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end-start;
-    std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+    //std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 
     f1.close();
     f2.close();
