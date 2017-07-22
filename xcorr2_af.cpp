@@ -39,7 +39,7 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     int out_width = width * scale_w;
 
     af::array in_fft = af::dft(in);
-    af::array out_fft = af::array(out_height, out_width, c32);
+    af::array out_fft = af::constant(af::cdouble(0, 0), out_height, out_width, c32);
 
     af::seq left = af::seq(0, width/2);
     af::seq &out_left = left;
@@ -51,14 +51,12 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     af::seq out_down = af::seq(out_height-height/2, out_height-1);;
 
     in_fft(af::span, width/2) /= 2.0;
-    out_fft = 0;
     out_fft(out_up, out_left) = in_fft(up, left);
     out_fft(out_up, out_right) = in_fft(up, right);
     out_fft(out_down, out_left) = in_fft(down, left);
     out_fft(out_down, out_right) = in_fft(down, right);
 
-    af::array out = af::idft(out_fft, 1.0/(height * width), out_fft.dims());
-    return out;
+    return af::idft(out_fft, 1.0/(height * width), out_fft.dims());
 }
 
 int main(int argc, char **argv) {
@@ -70,22 +68,18 @@ int main(int argc, char **argv) {
     std::ifstream f1(xcorr.m_path, std::ios::binary);
     std::ifstream f2(xcorr.s_path, std::ios::binary);
 
-    int loc_n, loc_x, loc_y;
-    int slave_loc_x, slave_loc_y;
-    int x_inc, y_inc;
-    int nx_win, ny_win;
-    int nx_corr, ny_corr;
-    int xsearch, ysearch;
+    const int xsearch = xcorr.xsearch;
+    const int ysearch = xcorr.ysearch;
+    const int nx_corr = xcorr.xsearch * 2;
+    const int nx_win = nx_corr * 2;
+    const int ny_corr = xcorr.ysearch * 2;
+    const int ny_win = ny_corr * 2;
+    const int x_inc = (xcorr.m_nx - 2*(xcorr.xsearch + nx_corr)) / (xcorr.nxl + 3);
+    const int y_inc = (xcorr.m_ny - 2*(xcorr.ysearch + ny_corr)) / (xcorr.nyl + 1);
 
-    xsearch = xcorr.xsearch;
-    ysearch = xcorr.ysearch;
-    nx_corr = xcorr.xsearch * 2;
-    nx_win = nx_corr * 2;
-    ny_corr = xcorr.ysearch * 2;
-    ny_win = ny_corr * 2;
-    x_inc = (xcorr.m_nx - 2*(xcorr.xsearch + nx_corr)) / (xcorr.nxl + 3);
-    y_inc = (xcorr.m_ny - 2*(xcorr.ysearch + ny_corr)) / (xcorr.nyl + 1);
-    loc_n = loc_x = loc_y = 0;
+    int loc_x, loc_y;
+    int slave_loc_x, slave_loc_y;
+    loc_x = loc_y = slave_loc_x = slave_loc_y = 0;
 
     std::chrono::time_point<std::chrono::system_clock> start, end;
     start = std::chrono::system_clock::now();
@@ -170,9 +164,6 @@ int main(int argc, char **argv) {
             float cmax;
             af::max<float>(&cmax, &max_idx, corr);
 
-            //printf("MAX VAL: %lf \n", max_val);
-            //printf("MAX IDX: %u \n", max_idx);
-
             int xpeak = max_idx / ny_corr - xsearch;
             int ypeak = max_idx % ny_corr - ysearch;
             af::array core1 = c1r(
@@ -181,10 +172,11 @@ int main(int argc, char **argv) {
             af::array core2 = c2r(
                 af::seq(ysearch, ysearch + ny_corr - 1),
                 af::seq(xsearch, xsearch + nx_corr - 1));
-            float num = af::sum<float>(core1 * core2);
             float denom1 = af::norm(core1);
             float denom2 = af::norm(core2);
+            float num = af::sum<float>(core1 * core2);
             float max_corr = 100 * fabs(num / (denom1 * denom2));
+            // float max_corr = fabs(af::corrcoef<float>(core1, core2)) * 100;
 
             float xfrac = 0.0, yfrac = 0.0;
             if (xcorr.interp_factor > 1) {
