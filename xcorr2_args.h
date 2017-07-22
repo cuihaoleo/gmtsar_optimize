@@ -18,6 +18,13 @@ struct st_xcorr {
     char *s_path;
 };
 
+enum enum_xcorr_af_device {
+    XCORR2_DEVICE_DEFAULT = 0,
+    XCORR2_DEVICE_CUDA,
+    XCORR2_DEVICE_OPENCL,
+    XCORR2_DEVICE_CPU
+};
+
 struct st_xcorr_args {
     const char *m_prm;
     const char *s_prm;
@@ -30,6 +37,8 @@ struct st_xcorr_args {
     bool noshift;
     bool nointerp;
     bool norange;
+
+    enum enum_xcorr_af_device device;
 };
 
 void apply_args(const struct st_xcorr_args *args, struct st_xcorr *xc);

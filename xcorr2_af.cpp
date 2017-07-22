@@ -50,15 +50,6 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     af::seq down = af::seq(height/2, height-1);
     af::seq out_down = af::seq(out_height-height/2, out_height-1);;
 
-    /*af::print("in_fft", in_fft);
-    af::dim4 out_dim = { out_height, out_width };
-    out = af::idft(in_fft, 1.0/(height*width), out_dim);
-    af::print("in", in);
-    af::print("out", out);
-    af::array out_fft2 = af::dft(out) / 2.0;
-    af::print("out", out_fft2);
-    exit(-1);*/
-
     in_fft(af::span, width/2) /= 2.0;
     out_fft = 0;
     out_fft(out_up, out_left) = in_fft(up, left);
@@ -99,7 +90,17 @@ int main(int argc, char **argv) {
     std::chrono::time_point<std::chrono::system_clock> start, end;
     start = std::chrono::system_clock::now();
 
-    af::setBackend(AF_BACKEND_OPENCL);
+    switch (args.device) {
+        case XCORR2_DEVICE_CUDA:
+            af::setBackend(AF_BACKEND_CUDA);
+            break;
+        case XCORR2_DEVICE_OPENCL:
+            af::setBackend(AF_BACKEND_OPENCL);
+            break;
+        case XCORR2_DEVICE_CPU:
+            af::setBackend(AF_BACKEND_CPU);
+            break;
+    }
     af::info();
 
     int *corr_mask_arr = new int[nx_win * ny_win];
@@ -147,15 +148,11 @@ int main(int argc, char **argv) {
 
             float m1 = af::mean<float>(c1r);
             float m2 = af::mean<float>(c2ro);
-            //std::cout << m1 << std::endl;
-            //std::cout << m2 << std::endl;
 
             c1r -= m1;
             c2ro -= m2;
 
-            af::array c2r(ny_win, nx_win, f32);
-            c2r = 0;
-
+            af::array c2r = af::constant(0, ny_win, nx_win, f32);
             af::seq roi_y(ysearch, ny_win - ysearch - 1);
             af::seq roi_x(xsearch, nx_win - xsearch - 1);
             c2r(roi_y, roi_x) = c2ro(roi_y, roi_x);

@@ -69,6 +69,7 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
         OPT_NO_SHIFT = -10,
         OPT_NOINTERP = -20,
         OPT_NORANGE = -30,
+        OPT_DEVICE = -40,
     };
 
     static const char *help = \
@@ -85,6 +86,7 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
         "-xsearch xs            search window size in x (range) direction (int power of 2 [32 64 128 256])\n"
         "-ysearch ys            search window size in y (azimuth) direction (int power of 2 [32 64 128 256])\n"
         "-interp  factor        interpolate correlation function by factor (int) [default, 16]\n"
+        "-af [cuda|opencl|cpu]  ArrayFire accelerate backend \n"
         "output: \n freq_xcorr.dat (default) \n time_xcorr.dat (if -time option))\n"
         "\nuse fitoffset.csh to convert output to PRM format\n"
         "\nExample:\n"
@@ -100,6 +102,7 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
         { "xsearch", required_argument, NULL, OPT_XSEARCH },
         { "ysearch", required_argument, NULL, OPT_YSEARCH },
         { "interp", required_argument, NULL, OPT_INTERP },
+        { "af", required_argument, NULL, OPT_DEVICE },
         { "help", required_argument, NULL, OPT_HELP },
         { 0, 0, 0, 0 },
     };
@@ -141,6 +144,18 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
                 break;
             case OPT_INTERP:
                 xa->interp = int_arg;
+                break;
+            case OPT_DEVICE:
+                if (!strcmp(optarg, "cuda"))
+                    xa->device = XCORR2_DEVICE_CUDA;
+                else if (!strcmp(optarg, "opencl"))
+                    xa->device = XCORR2_DEVICE_OPENCL;
+                else if (!strcmp(optarg, "cpu"))
+                    xa->device = XCORR2_DEVICE_CPU;
+                else {
+                    fputs(help, stdout);
+                    exit(-1);
+                }
                 break;
             case OPT_RANGE_INTERP:
                 xa->range_interp = int_arg;
