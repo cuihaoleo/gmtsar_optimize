@@ -5,6 +5,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <ctype.h>
+
+void strtrim(char *s) {
+    char *p = s;
+
+    while (*p) {
+        if (isspace(*p)) {
+            p++;
+            continue;
+        }
+
+        *(s++) = *(p++);
+    }
+
+    *s = *p;
+}
 
 void apply_args(const struct st_xcorr_args *args, struct st_xcorr *xc) {
     int num_patches, num_valid_az;
@@ -13,7 +29,9 @@ void apply_args(const struct st_xcorr_args *args, struct st_xcorr *xc) {
     struct prm_handler s_prm = prm_open(args->s_prm);
 
     xc->m_path = strdup(prm_get_str(m_prm, "SLC_file"));
+    strtrim(xc->m_path);
     xc->s_path = strdup(prm_get_str(s_prm, "SLC_file"));
+    strtrim(xc->s_path);
 
     xc->m_nx = prm_get_int(m_prm, "num_rng_bins");
     num_patches = prm_get_int(m_prm, "num_patches");
