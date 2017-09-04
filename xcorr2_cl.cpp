@@ -81,9 +81,6 @@ int main(int argc, char **argv) {
     int slave_loc_x, slave_loc_y;
     loc_x = loc_y = slave_loc_x = slave_loc_y = 0;
 
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-    start = std::chrono::system_clock::now();
-
     switch (args.device) {
         case XCORR2_DEVICE_CUDA:
             af::setBackend(AF_BACKEND_CUDA);
@@ -94,8 +91,13 @@ int main(int argc, char **argv) {
         case XCORR2_DEVICE_CPU:
             af::setBackend(AF_BACKEND_CPU);
             break;
+        default:
+            af::setBackend(AF_BACKEND_DEFAULT);
     }
-    af::info();
+    //af::info();
+
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    start = std::chrono::system_clock::now();
 
     int *corr_mask_arr = new int[nx_win * ny_win];
     for (int i=0; i<nx_win; i++)
@@ -233,7 +235,7 @@ int main(int argc, char **argv) {
 
     end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end-start;
-    //std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+    std::cerr << "elapsed time: " << elapsed_seconds.count() << "s\n";
 
     f1.close();
     f2.close();
