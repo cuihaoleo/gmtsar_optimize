@@ -59,11 +59,30 @@ af::array dft_interpolate(const af::array &in, int scale_h, int scale_w) {
     return af::idft(out_fft, 1.0/(height * width), out_fft.dims());
 }
 
+void arrayfire_init(const st_xcorr_args &args) {
+    switch (args.device) {
+        case XCORR2_DEVICE_CUDA:
+            af::setBackend(AF_BACKEND_CUDA);
+            break;
+        case XCORR2_DEVICE_OPENCL:
+            af::setBackend(AF_BACKEND_OPENCL);
+            break;
+        case XCORR2_DEVICE_CPU:
+            af::setBackend(AF_BACKEND_CPU);
+            break;
+        default:
+            af::setBackend(AF_BACKEND_DEFAULT);
+    }
+    af::info();
+}
+
 int main(int argc, char **argv) {
     st_xcorr_args args;
     st_xcorr xcorr;
+
     parse_opts(&args, argc, argv);
     apply_args(&args, &xcorr);
+    arrayfire_init(args);
 
     std::ifstream f1(xcorr.m_path, std::ios::binary);
     std::ifstream f2(xcorr.s_path, std::ios::binary);
@@ -81,22 +100,9 @@ int main(int argc, char **argv) {
     int slave_loc_x, slave_loc_y;
     loc_x = loc_y = slave_loc_x = slave_loc_y = 0;
 
-    switch (args.device) {
-        case XCORR2_DEVICE_CUDA:
-            af::setBackend(AF_BACKEND_CUDA);
-            break;
-        case XCORR2_DEVICE_OPENCL:
-            af::setBackend(AF_BACKEND_OPENCL);
-            break;
-        case XCORR2_DEVICE_CPU:
-            af::setBackend(AF_BACKEND_CPU);
-            break;
-        default:
-            af::setBackend(AF_BACKEND_DEFAULT);
-    }
-    //af::info();
-
     int *corr_mask_arr = new int[nx_win * ny_win];
+    FILE *fout = fopen("freq_xcorr.dat", "w");
+
     for (int i=0; i<nx_win; i++)
         for (int j=0; j<ny_win; j++)
             corr_mask_arr[i*ny_win + j] = ((i + j) & 1) ? -1 : 1;
@@ -226,12 +232,13 @@ int main(int argc, char **argv) {
 
             float xoff = xcorr.x_offset - ((xpeak + xfrac) / xcorr.ri);
             float yoff = xcorr.y_offset - (ypeak + yfrac) + loc_y * xcorr.astretcha;
-            printf(" %d %6.3lf %d %6.3lf %6.2lf \n", loc_x, xoff, loc_y, yoff, max_corr);
+            fprintf(fout, " %d %6.3lf %d %6.3lf %6.2lf \n", loc_x, xoff, loc_y, yoff, max_corr);
         }
     }
 
     f1.close();
     f2.close();
+    fclose(fout);
 
     return 0;
 }

@@ -384,10 +384,13 @@ void do_correlation(struct st_xcorr *xc, long thread_n) {
 #endif
     fftw_cleanup();
 
+    FILE *fout = fopen("freq_xcorr.dat", "w");
     for (int i=0; i<loc_n; i++) {
         struct st_corr_thread_data *p = thread_data + i;
-        printf(" %d %6.3f %d %6.3f %6.2f \n", p->loc_x, p->xoff, p->loc_y, p->yoff, p->corr);
+        fprintf(fout, " %d %6.3f %d %6.3f %6.2f \n",
+                p->loc_x, p->xoff, p->loc_y, p->yoff, p->corr);
     }
+    fclose(fout);
 }
 
 int main(int argc, char **argv) {
