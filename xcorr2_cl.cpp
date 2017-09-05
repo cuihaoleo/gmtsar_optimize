@@ -1,5 +1,6 @@
-extern "C" {
 #include <complex.h>
+
+extern "C" {
 #include "xcorr2.h"
 #include "xcorr2_args.h"
 }
@@ -13,7 +14,6 @@ extern "C" {
 #include <iostream>
 #include <complex>
 #include <cmath>
-#include <chrono>
 
 af::array load_slc_rows(std::ifstream &fin, int start, int n_rows, int nx) {
     long offset;
@@ -95,9 +95,6 @@ int main(int argc, char **argv) {
             af::setBackend(AF_BACKEND_DEFAULT);
     }
     //af::info();
-
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-    start = std::chrono::system_clock::now();
 
     int *corr_mask_arr = new int[nx_win * ny_win];
     for (int i=0; i<nx_win; i++)
@@ -232,10 +229,6 @@ int main(int argc, char **argv) {
             printf(" %d %6.3lf %d %6.3lf %6.2lf \n", loc_x, xoff, loc_y, yoff, max_corr);
         }
     }
-
-    end = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end-start;
-    std::cerr << "elapsed time: " << elapsed_seconds.count() << "s\n";
 
     f1.close();
     f2.close();
