@@ -83,11 +83,11 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
         OPT_XSEARCH = 40,
         OPT_YSEARCH = 50,
         OPT_INTERP = 60,
-        OPT_HELP = 100,
         OPT_NO_SHIFT = -10,
         OPT_NOINTERP = -20,
         OPT_NORANGE = -30,
         OPT_DEVICE = -40,
+        OPT_HELP = -100,
     };
 
     static const char *help = \
@@ -121,7 +121,7 @@ void parse_opts(struct st_xcorr_args *xa, int argc, char **argv) {
         { "ysearch", required_argument, NULL, OPT_YSEARCH },
         { "interp", required_argument, NULL, OPT_INTERP },
         { "af", required_argument, NULL, OPT_DEVICE },
-        { "help", required_argument, NULL, OPT_HELP },
+        { "help", no_argument, NULL, OPT_HELP },
         { 0, 0, 0, 0 },
     };
 
