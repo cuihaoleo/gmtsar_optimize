@@ -1,0 +1,30 @@
+#!/bin/csh -f
+set rootdir = `/bin/dirname $0`
+set rootdir = `cd $rootdir && pwd` 
+set workdir = `mktemp -d`
+
+if ($#argv <= 1) goto ERROR_BAD_ARG
+
+if ($argv[1] == "orig") then
+    echo "Using original xcorr"
+    set exe = `which xcorr`
+else if ($argv[1] == "mt") then
+    echo "Using xcorr2 (multi-thread)"
+    set exe = "$rootdir/xcorr2"
+else if ($argv[1] == "opencl") then
+    echo "Using xcorr2 (OpenCL)"
+    set exe = "$rootdir/xcorr2_cl"
+else
+    goto ERROR_BAD_ARG
+endif
+
+ln -s "$exe" "$workdir/xcorr"
+
+echo $argv[2-]
+setenv PATH $workdir\:$rootdir\:$PATH
+$argv[2-]
+exit 0
+
+ERROR_BAD_ARG:
+    echo "$0 (orig|mt|opencl) <GMTSAR commands>"
+    exit -1
