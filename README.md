@@ -68,6 +68,34 @@ For AMD/NVIDIA cards with open-source driver installed, install Mesa implementat
 apt-get install mesa-opencl-icd
 ```
 
+### macOS (with Homebrew)
+
+Following instructions assume that GMT5SAR and its dependencies has been installed. If not, please follow [GMTSAR's installation guide](http://gmt.soest.hawaii.edu/projects/gmt5sar/wiki).
+
+Ensure pkg-config is installed:
+
+```bash
+brew install pkg-config
+```
+
+Install building dependencies of `xcorr2_cl`:
+
+```bash
+brew install arrayfire
+```
+
+Then, `cd` into source directory and run `make` to build the binaries.
+
+```bash
+make xcorr2     # build xcorr2 only
+make xcorr2_cl  # build xcorr2_cl only
+make            # build all binaries
+```
+
+Now you should get executable `xcorr2` and/or `xcorr2_cl` binaries.
+
+Note: I don't have MacBook with discrete graphics card, so OpenCL version is not fully tested on macOS.
+
 
 ## Usage
 
